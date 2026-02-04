@@ -3,210 +3,144 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Minecraft Real Ping Monitor</title>
+<title>Minecraft Ping Tool</title>
 
+<!-- Minecraft font -->
 <link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
+*{box-sizing:border-box;font-family:'Minecraft',sans-serif}
 body{
   margin:0;
-  height:100vh;
-  background:url("beaa776788318ffa9adf475282e18bb5.gif") no-repeat center center fixed;
-  background-size:cover;
-  font-family:'Minecraft', sans-serif;
+  min-height:100vh;
+  background:
+    linear-gradient(rgba(0,0,0,.7),rgba(0,0,0,.7)),
+    url("beaa776788318ffa9adf475282e18bb5.gif") center/cover no-repeat fixed;
   display:flex;
   justify-content:center;
   align-items:center;
-}
-.overlay{
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,.65);
+  color:#0ff;
 }
 .card{
-  position:relative;
-  z-index:2;
   width:95%;
-  max-width:460px;
-  backdrop-filter:blur(16px);
-  background:rgba(10,10,20,.8);
-  border-radius:22px;
-  padding:18px;
-  color:#e5e7eb;
-  box-shadow:0 0 35px #00ffff88;
+  max-width:420px;
+  padding:20px;
+  background:rgba(0,0,0,.4);
+  backdrop-filter:blur(15px);
+  border-radius:20px;
+  box-shadow:0 0 25px #0ff;
 }
-h1{
-  text-align:center;
-  color:#00ffff;
-  text-shadow:0 0 12px #00ffff;
-}
+h1{text-align:center;margin-bottom:15px}
 input,select,button{
   width:100%;
-  padding:10px;
-  margin:6px 0;
-  border:none;
+  padding:12px;
+  margin:8px 0;
   border-radius:10px;
-  font-family:inherit;
+  border:none;
+  font-size:14px;
 }
-input,select{
-  background:#111827;
-  color:white;
-}
+input,select{background:#111;color:#0ff}
 button{
-  background:#00ffff;
-  color:black;
+  background:#0ff;
+  color:#000;
   font-weight:bold;
+  cursor:pointer;
 }
-.good{color:#22c55e}
-.medium{color:#facc15}
-.bad{color:#ef4444}
-.neon{text-shadow:0 0 8px currentColor}
-#map{
-  height:140px;
-  border-radius:12px;
-  margin-top:10px;
-}
+button:active{transform:scale(.97)}
+.result{text-align:center;margin-top:10px}
+.bad{color:#f33}
+.medium{color:#ff0}
+.good{color:#0f0}
+canvas{margin-top:10px}
 </style>
 </head>
 
 <body>
-<div class="overlay"></div>
 
 <div class="card">
-<h1>Minecraft Ping</h1>
+  <h1>MC PING</h1>
 
-<input id="ipInput" placeholder="Server IP (play.example.net)">
-<input id="portInput" placeholder="Port">
+  <input id="ip" placeholder="Server IP (play.hypixel.net)">
+  <input id="port" placeholder="Port" value="25565">
 
-<select id="typeSelect" onchange="autoPort()">
-  <option value="java">Minecraft Java</option>
-  <option value="bedrock">Minecraft Bedrock</option>
-  <option value="geyser">Geyser (Java + Bedrock)</option>
-  <option value="other">Other Server</option>
-</select>
+  <select id="type">
+    <option value="java">Java</option>
+    <option value="bedrock">Bedrock</option>
+    <option value="geyser">Geyser</option>
+    <option value="other">Other</option>
+  </select>
 
-<button onclick="checkPing()">Check Ping</button>
+  <button onclick="checkPing()">Check Ping</button>
 
-<div style="margin-top:8px;line-height:1.6">
-  Ping: <span id="ping">--</span> ms<br>
-  Min: <span id="minPing">--</span> ms |
-  Max: <span id="maxPing">--</span> ms<br>
-  Gameplay: <span id="quality">--</span>
+  <div class="result" id="status">Waiting...</div>
+  <div class="result" id="ping"></div>
+  <div class="result" id="quality"></div>
+
+  <canvas id="graph" height="80"></canvas>
 </div>
 
-<canvas id="chart"></canvas>
-<div id="map"></div>
-</div>
-
-<audio id="pingSound" src="sounds/alert.mp3" preload="auto"></audio>
+<audio id="alertSound" src="sounds/alert.mp3"></audio>
 
 <script>
-/* ELEMENTS */
-const ipInput = document.getElementById("ipInput");
-const portInput = document.getElementById("portInput");
-const typeSelect = document.getElementById("typeSelect");
-const pingEl = document.getElementById("ping");
-const minEl = document.getElementById("minPing");
-const maxEl = document.getElementById("maxPing");
-const qualityEl = document.getElementById("quality");
-const sound = document.getElementById("pingSound");
+const API = "https://ping-yies.onrender.com/ping";
+const canvas = document.getElementById("graph");
+const ctx = canvas.getContext("2d");
+let history = [];
 
-let minPing = Infinity;
-let maxPing = 0;
+function checkPing(){
+  const ip = document.getElementById("ip").value;
+  const port = document.getElementById("port").value;
+  const type = document.getElementById("type").value;
 
-/* AUTO PORT */
-function autoPort(){
-  if(typeSelect.value === "java") portInput.value = 25565;
-  else if(typeSelect.value === "bedrock") portInput.value = 19132;
-}
-
-/* GRAPH */
-const chart = new Chart(document.getElementById("chart"), {
-  type:"line",
-  data:{
-    labels:[],
-    datasets:[{
-      label:"Ping (ms)",
-      data:[],
-      borderWidth:2,
-      tension:.3
-    }]
-  },
-  options:{responsive:true}
-});
-
-/* REAL PING */
-async function checkPing(){
-  const ip = ipInput.value.trim();
-  const port = portInput.value.trim();
-  const type = typeSelect.value;
-
-  if(!ip || !port){
-    alert("Enter IP and Port");
-    return;
-  }
-
-  try{
-    const res = await fetch(
-      `https://YOUR-BACKEND-URL/ping?ip=${ip}&port=${port}&type=${type}`
-    );
-    const data = await res.json();
-
-    if(!data.online){
-      qualityEl.innerText = "SERVER OFFLINE";
-      qualityEl.className = "bad neon";
+  document.getElementById("status").innerText="Checking...";
+  fetch(`${API}?ip=${ip}&port=${port}&type=${type}`)
+  .then(r=>r.json())
+  .then(d=>{
+    if(!d.online){
+      document.getElementById("status").innerText="Server Offline ❌";
       return;
     }
 
-    const ping = data.ping;
-    pingEl.innerText = ping;
+    const p = d.ping;
+    history.push(p);
+    if(history.length>20)history.shift();
 
-    minPing = Math.min(minPing, ping);
-    maxPing = Math.max(maxPing, ping);
-    minEl.innerText = minPing;
-    maxEl.innerText = maxPing;
+    document.getElementById("status").innerText="Online ✅";
+    document.getElementById("ping").innerText=`Ping: ${p} ms`;
 
-    if(ping <= 100){
-      qualityEl.innerText = "GOOD";
-      qualityEl.className = "good neon";
-    }else if(ping <= 200){
-      qualityEl.innerText = "MEDIUM";
-      qualityEl.className = "medium neon";
-    }else{
-      qualityEl.innerText = "BAD";
-      qualityEl.className = "bad neon";
-      sound.play();
-    }
+    let q="GOOD",cls="good";
+    if(p>200){q="BAD";cls="bad";playSound();}
+    else if(p>120){q="MEDIUM";cls="medium"}
 
-    chart.data.labels.push("");
-    chart.data.datasets[0].data.push(ping);
-    chart.update();
+    document.getElementById("quality").innerHTML=
+      `<span class="${cls}">${q}</span>`;
 
-  }catch(e){
-    alert("Backend not reachable");
-  }
+    drawGraph();
+  })
+  .catch(()=>{
+    document.getElementById("status").innerText="Backend not reachable";
+  });
 }
 
-/* LOCATION MAP */
-const map = L.map('map').setView([0,0],2);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+function playSound(){
+  const s=document.getElementById("alertSound");
+  s.currentTime=0;
+  s.play();
+}
 
-fetch("https://ipapi.co/json/")
-.then(r=>r.json())
-.then(l=>{
-  map.setView([l.latitude,l.longitude],10);
-  L.marker([l.latitude,l.longitude]).addTo(map);
-});
-
-/* FULLSCREEN ON TAP (mobile) */
-document.body.addEventListener("click",()=>{
-  if(document.fullscreenElement==null){
-    document.body.requestFullscreen().catch(()=>{});
-  }
-},{once:true});
+function drawGraph(){
+  canvas.width=canvas.clientWidth;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.beginPath();
+  ctx.strokeStyle="#0ff";
+  history.forEach((p,i)=>{
+    const x=i*(canvas.width/20);
+    const y=canvas.height-(p/300*canvas.height);
+    i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  });
+  ctx.stroke();
+}
 </script>
+
 </body>
 </html>
