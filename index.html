@@ -3,65 +3,42 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Minecraft Ping Tool</title>
-
-<!-- Minecraft font -->
+<title>Minecraft Ping</title>
 <link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
-
 <style>
 *{box-sizing:border-box;font-family:'Minecraft',sans-serif}
 body{
-  margin:0;
-  min-height:100vh;
+  margin:0;min-height:100vh;
   background:
-    linear-gradient(rgba(0,0,0,.7),rgba(0,0,0,.7)),
+    linear-gradient(rgba(0,0,0,.75),rgba(0,0,0,.75)),
     url("beaa776788318ffa9adf475282e18bb5.gif") center/cover no-repeat fixed;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  color:#0ff;
+  display:flex;align-items:center;justify-content:center;color:#0ff
 }
 .card{
-  width:95%;
-  max-width:420px;
-  padding:20px;
-  background:rgba(0,0,0,.4);
-  backdrop-filter:blur(15px);
-  border-radius:20px;
-  box-shadow:0 0 25px #0ff;
+  width:95%;max-width:420px;padding:20px;
+  background:rgba(0,0,0,.45);backdrop-filter:blur(16px);
+  border-radius:20px;box-shadow:0 0 30px #0ff
 }
-h1{text-align:center;margin-bottom:15px}
+h1{text-align:center;margin:0 0 10px}
 input,select,button{
-  width:100%;
-  padding:12px;
-  margin:8px 0;
-  border-radius:10px;
-  border:none;
-  font-size:14px;
+  width:100%;padding:12px;margin:8px 0;border-radius:10px;border:none
 }
 input,select{background:#111;color:#0ff}
-button{
-  background:#0ff;
-  color:#000;
-  font-weight:bold;
-  cursor:pointer;
-}
+button{background:#0ff;color:#000;font-weight:bold}
 button:active{transform:scale(.97)}
-.result{text-align:center;margin-top:10px}
-.bad{color:#f33}
-.medium{color:#ff0}
-.good{color:#0f0}
-canvas{margin-top:10px}
+.result{text-align:center;margin-top:6px}
+.good{color:#0f0}.medium{color:#ff0}.bad{color:#f33}
+canvas{margin-top:10px;width:100%}
+.small{text-align:center;font-size:12px;opacity:.8}
 </style>
 </head>
-
 <body>
 
 <div class="card">
   <h1>MC PING</h1>
 
   <input id="ip" placeholder="Server IP (play.hypixel.net)">
-  <input id="port" placeholder="Port" value="25565">
+  <input id="port" value="25565">
 
   <select id="type">
     <option value="java">Java</option>
@@ -72,75 +49,62 @@ canvas{margin-top:10px}
 
   <button onclick="checkPing()">Check Ping</button>
 
-  <div class="result" id="status">Waiting...</div>
+  <div class="result" id="status">Ready</div>
   <div class="result" id="ping"></div>
   <div class="result" id="quality"></div>
 
   <canvas id="graph" height="80"></canvas>
+  <div class="small">Tip: First click may wake server</div>
 </div>
 
 <audio id="alertSound" src="sounds/alert.mp3"></audio>
 
 <script>
-const API = "https://ping-yies.onrender.com/ping";
-const canvas = document.getElementById("graph");
-const ctx = canvas.getContext("2d");
-let history = [];
+const API="https://ping-yies.onrender.com/ping";
+const c=document.getElementById("graph"),x=c.getContext("2d");
+let hist=[],waking=false;
 
 function checkPing(){
-  const ip = document.getElementById("ip").value;
-  const port = document.getElementById("port").value;
-  const type = document.getElementById("type").value;
+  const ip=document.getElementById("ip").value.trim();
+  const port=document.getElementById("port").value.trim()||"25565";
+  const type=document.getElementById("type").value;
+  if(!ip){set("Enter server IP ❌");return}
 
-  document.getElementById("status").innerText="Checking...";
+  set("Checking...");
   fetch(`${API}?ip=${ip}&port=${port}&type=${type}`)
   .then(r=>r.json())
   .then(d=>{
-    if(!d.online){
-      document.getElementById("status").innerText="Server Offline ❌";
-      return;
-    }
-
-    const p = d.ping;
-    history.push(p);
-    if(history.length>20)history.shift();
-
-    document.getElementById("status").innerText="Online ✅";
+    if(!d.online){set("Server Offline ❌");return}
+    waking=false;
+    const p=d.ping;
+    hist.push(p); if(hist.length>20) hist.shift();
     document.getElementById("ping").innerText=`Ping: ${p} ms`;
 
-    let q="GOOD",cls="good";
-    if(p>200){q="BAD";cls="bad";playSound();}
-    else if(p>120){q="MEDIUM";cls="medium"}
-
-    document.getElementById("quality").innerHTML=
-      `<span class="${cls}">${q}</span>`;
-
-    drawGraph();
+    let t="GOOD",cls="good";
+    if(p>200){t="BAD";cls="bad";sound()}
+    else if(p>120){t="MEDIUM";cls="medium"}
+    document.getElementById("quality").innerHTML=`<span class="${cls}">${t}</span>`;
+    set("Online ✅");
+    draw();
   })
   .catch(()=>{
-    document.getElementById("status").innerText="Backend not reachable";
+    if(!waking){
+      waking=true;
+      set("Waking server… tap again ⏳");
+    }
   });
 }
 
-function playSound(){
-  const s=document.getElementById("alertSound");
-  s.currentTime=0;
-  s.play();
-}
-
-function drawGraph(){
-  canvas.width=canvas.clientWidth;
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.beginPath();
-  ctx.strokeStyle="#0ff";
-  history.forEach((p,i)=>{
-    const x=i*(canvas.width/20);
-    const y=canvas.height-(p/300*canvas.height);
-    i?ctx.lineTo(x,y):ctx.moveTo(x,y);
-  });
-  ctx.stroke();
+function set(s){document.getElementById("status").innerText=s}
+function sound(){const a=document.getElementById("alertSound");a.currentTime=0;a.play()}
+function draw(){
+  c.width=c.clientWidth;x.clearRect(0,0,c.width,c.height);
+  x.beginPath();x.strokeStyle="#0ff";
+  hist.forEach((p,i)=>{
+    const xx=i*(c.width/20),yy=c.height-(p/300*c.height);
+    i?x.lineTo(xx,yy):x.moveTo(xx,yy)
+  });x.stroke();
 }
 </script>
-
 </body>
 </html>
