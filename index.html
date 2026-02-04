@@ -3,21 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Minecraft Ping Tool</title>
+<title>Minecraft Ping Dashboard</title>
 <link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
 *{box-sizing:border-box;font-family:'Minecraft',sans-serif}
 body{
   margin:0;min-height:100vh;
-  background:
-    linear-gradient(rgba(0,0,0,.75),rgba(0,0,0,.75)),
-    url("beaa776788318ffa9adf475282e18bb5.gif") center/cover no-repeat fixed;
-  display:flex;align-items:center;justify-content:center;color:#0ff
+  background: linear-gradient(rgba(0,0,0,.75),rgba(0,0,0,.75)),
+  url("beaa776788318ffa9adf475282e18bb5.gif") center/cover no-repeat fixed;
+  display:flex;flex-direction:column;align-items:center;color:#0ff;
 }
 .card{
-  width:95%;max-width:420px;padding:20px;
+  width:95%;max-width:500px;padding:20px;
   background:rgba(0,0,0,.45);backdrop-filter:blur(16px);
-  border-radius:20px;box-shadow:0 0 30px #0ff
+  border-radius:20px;box-shadow:0 0 30px #0ff;margin-top:20px
 }
 h1{text-align:center;margin:0 0 10px}
 input,select,button{
@@ -28,25 +28,23 @@ button{background:#0ff;color:#000;font-weight:bold}
 button:active{transform:scale(.97)}
 .result{text-align:center;margin-top:6px}
 .good{color:#0f0}.medium{color:#ff0}.bad{color:#f33}
-canvas{margin-top:10px;width:100%}
+canvas{margin-top:10px;width:100%;height:80px;}
+#map{height:200px;width:100%;margin-top:10px;border-radius:12px;box-shadow:0 0 15px #0ff}
 .small{text-align:center;font-size:12px;opacity:.8}
 </style>
 </head>
 <body>
 
 <div class="card">
-  <h1>MC PING</h1>
-
+  <h1>MC PING DASHBOARD</h1>
   <input id="ip" placeholder="Server IP (play.hypixel.net)">
   <input id="port" value="25565">
-
   <select id="type">
     <option value="java">Java</option>
     <option value="bedrock">Bedrock</option>
     <option value="geyser">Geyser</option>
     <option value="other">Other</option>
   </select>
-
   <button onclick="checkPing()">Check Ping</button>
 
   <div class="result" id="status">Ready</div>
@@ -56,16 +54,26 @@ canvas{margin-top:10px;width:100%}
   <div class="result" id="timeinfo"></div>
   <div class="result" id="location"></div>
 
-  <canvas id="graph" height="80"></canvas>
+  <canvas id="graph"></canvas>
+  <div id="map"></div>
+
   <div class="small">Tip: First click may wake server</div>
 </div>
 
 <audio id="alertSound" src="sounds/alert.mp3"></audio>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const API="https://ping-yies.onrender.com/ping";
-const c=document.getElementById("graph"),x=c.getContext("2d");
+const canvas=document.getElementById("graph"),ctx=canvas.getContext("2d");
 let hist=[],times=[],minPing=null,maxPing=null,waking=false;
+
+// Leaflet map
+const map=L.map('map').setView([20,0],2);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom:19, attribution:'&copy; OpenStreetMap'
+}).addTo(map);
+let marker=null;
 
 function checkPing(){
   const ip=document.getElementById("ip").value.trim();
@@ -76,7 +84,7 @@ function checkPing(){
   set("Checking...");
   document.getElementById("ping").innerText="";
   document.getElementById("quality").innerText="";
-  
+
   fetch(`${API}?ip=${ip}&port=${port}&type=${type}`)
     .then(r=>r.json())
     .then(d=>{
@@ -85,16 +93,15 @@ function checkPing(){
 
       const p=d.ping;
 
-      // Min / Max ping
-      minPing = minPing===null ? p : Math.min(minPing,p);
-      maxPing = maxPing===null ? p : Math.max(maxPing,p);
-      document.getElementById("minmax").innerText = `Min: ${minPing} ms | Max: ${maxPing} ms`;
+      // Min / Max
+      minPing=minPing===null?p:Math.min(minPing,p);
+      maxPing=maxPing===null?p:Math.max(maxPing,p);
+      document.getElementById("minmax").innerText=`Min: ${minPing} ms | Max: ${maxPing} ms`;
 
       // Time
       const now=new Date().toLocaleTimeString();
-      times.push(now);
-      if(times.length>20) times.shift();
-      document.getElementById("timeinfo").innerText = `Last check: ${now}`;
+      times.push(now); if(times.length>20) times.shift();
+      document.getElementById("timeinfo").innerText=`Last check: ${now}`;
 
       // Current ping
       hist.push(p); if(hist.length>20) hist.shift();
@@ -106,38 +113,50 @@ function checkPing(){
       else if(p>120){t="MEDIUM";cls="medium"}
       document.getElementById("quality").innerHTML=`<span class="${cls}">${t}</span>`;
 
-      // Location
+      // Location + Map
       fetchLocation(ip);
 
       set("Server Online ✅");
-      draw();
+      drawGraph();
     })
     .catch(()=>{if(!waking){waking=true;set("Waking server… tap again ⏳");}});
 }
 
 function fetchLocation(ip){
-  fetch(`https://ipapi.co/${ip}/country_name/`)
-    .then(r=>r.text())
-    .then(c=>document.getElementById("location").innerText="Server location: "+c)
-    .catch(()=>{document.getElementById("location").innerText=""});
+  fetch(`https://ipapi.co/${ip}/json/`)
+    .then(r=>r.json())
+    .then(data=>{
+      if(data && data.latitude && data.longitude){
+        document.getElementById("location").innerText=`Server location: ${data.city || 'Unknown'}, ${data.country_name || 'Unknown'}`;
+        // Add marker
+        if(marker) marker.remove();
+        marker=L.marker([data.latitude,data.longitude]).addTo(map)
+          .bindPopup(`Server: ${ip}<br>${data.city || 'Unknown'}, ${data.country_name || 'Unknown'}`)
+          .openPopup();
+        map.setView([data.latitude,data.longitude],4);
+      }else{
+        document.getElementById("location").innerText="Server location: Unknown";
+      }
+    })
+    .catch(()=>document.getElementById("location").innerText="Server location: Unknown");
 }
 
 function playSound(){const a=document.getElementById("alertSound");a.currentTime=0;a.play()}
 function set(s){document.getElementById("status").innerText=s}
 
-function draw(){
-  c.width=c.clientWidth;
-  x.clearRect(0,0,c.width,c.height);
-  x.beginPath();
-  x.strokeStyle="#0ff";
+function drawGraph(){
+  canvas.width=canvas.clientWidth;
+  canvas.height=80;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.beginPath();
+  ctx.strokeStyle="#0ff";
   hist.forEach((p,i)=>{
-    const xx=i*(c.width/(hist.length-1||1));
-    const yy=c.height-(p/300*c.height);
-    i?x.lineTo(xx,yy):x.moveTo(xx,yy);
+    const xx=i*(canvas.width/(hist.length-1||1));
+    const yy=canvas.height-(p/300*canvas.height);
+    i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);
   });
-  x.stroke();
+  ctx.stroke();
 }
 </script>
-
 </body>
 </html>
