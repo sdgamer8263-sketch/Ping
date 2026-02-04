@@ -3,140 +3,186 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Minecraft Ping Monitor</title>
+<title>Minecraft Real Ping Monitor</title>
+
+<!-- Minecraft Font -->
+<link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Leaflet Map -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-*{
-  margin:0;
-  padding:0;
-  box-sizing:border-box;
-  font-family:'Segoe UI',sans-serif;
-}
 body{
+  margin:0;
   height:100vh;
   background:url("dfr.jpg") no-repeat center center fixed;
   background-size:cover;
+  font-family:'Minecraft', sans-serif;
   display:flex;
   justify-content:center;
   align-items:center;
-  color:#e5e7eb;
 }
 .overlay{
-  background:rgba(0,0,0,0.6);
-  backdrop-filter:blur(12px);
-  border-radius:20px;
-  padding:22px;
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.65);
+}
+.card{
+  position:relative;
+  z-index:2;
   width:95%;
-  max-width:380px;
-  border:1px solid rgba(56,189,248,0.4);
-  box-shadow:0 0 45px rgba(56,189,248,0.35);
-}
-h2{
-  text-align:center;
-  color:#38bdf8;
-  margin-bottom:6px;
-}
-.time{
-  text-align:center;
-  font-size:13px;
-  color:#94a3b8;
-  margin-bottom:14px;
-}
-input{
-  width:100%;
-  padding:8px;
-  border-radius:8px;
-  border:none;
-  outline:none;
-  margin-bottom:12px;
-  background:#020617;
+  max-width:450px;
+  backdrop-filter:blur(16px);
+  background:rgba(10,10,20,.75);
+  border-radius:22px;
+  padding:18px;
   color:#e5e7eb;
+  box-shadow:0 0 30px #00ffff66;
 }
-.stat{
-  display:flex;
-  justify-content:space-between;
-  margin:8px 0;
+h1{
+  text-align:center;
+  color:#00ffff;
+  text-shadow:0 0 10px #00ffff;
 }
-.current{color:#22c55e;font-weight:bold;}
-.low{color:#38bdf8;font-weight:bold;}
-.high{color:#f87171;font-weight:bold;}
-.map{
-  margin-top:12px;
+input,select,button{
+  width:100%;
+  padding:10px;
+  margin:6px 0;
+  border:none;
+  border-radius:10px;
+  font-family:inherit;
+}
+input,select{
+  background:#111827;
+  color:white;
+}
+button{
+  background:#00ffff;
+  color:black;
+  font-weight:bold;
+}
+.good{color:#22c55e}
+.medium{color:#facc15}
+.bad{color:#ef4444}
+.neon{text-shadow:0 0 8px currentColor}
+
+#map{
+  height:150px;
   border-radius:12px;
-  overflow:hidden;
-  border:1px solid rgba(56,189,248,0.3);
+  margin-top:10px;
+}
+canvas{
+  margin-top:10px;
 }
 </style>
 </head>
 
 <body>
+<div class="overlay"></div>
 
-<div class="overlay">
-  <h2>⛏️ Minecraft Ping Monitor</h2>
-  <div class="time" id="time">--:--:--</div>
+<div class="card">
+<h1>Minecraft Ping</h1>
 
-  <input id="serverIP" placeholder="Minecraft Server IP (example: play.hypixel.net)">
+<input id="ip" placeholder="Server IP">
+<input id="port" placeholder="Port (25565 / 19132)">
 
-  <div class="stat">Current Ping <span class="current" id="current">-</span> ms</div>
-  <div class="stat">Lowest Ping <span class="low" id="low">-</span> ms</div>
-  <div class="stat">Highest Ping <span class="high" id="high">-</span> ms</div>
+<select id="type">
+  <option value="java">Java</option>
+  <option value="bedrock">Bedrock</option>
+  <option value="geyser">Geyser</option>
+  <option value="other">Other</option>
+</select>
 
-  <div class="map">
-    <iframe id="map" width="100%" height="160" loading="lazy"></iframe>
-  </div>
+<button onclick="checkPing()">Check Ping</button>
+
+<div>
+  Ping: <span id="ping">--</span> ms<br>
+  Min: <span id="min">--</span> ms |
+  Max: <span id="max">--</span> ms<br>
+  Gameplay: <span id="quality">--</span>
+</div>
+
+<canvas id="chart"></canvas>
+<div id="map"></div>
 </div>
 
 <audio id="pingSound" src="sounds/alert.mp3" preload="auto"></audio>
 
 <script>
-let lowest=null;
-let highest=0;
-const HIGH_PING_LIMIT=200;
-let soundCooldown=false;
+let minPing=Infinity,maxPing=0;
+let dataArr=[];
 const sound=document.getElementById("pingSound");
 
-// Live time
-setInterval(()=>{
-  document.getElementById("time").innerText=
-    new Date().toLocaleTimeString();
-},1000);
-
-// User location map
-navigator.geolocation.getCurrentPosition(pos=>{
-  const{latitude,longitude}=pos.coords;
-  document.getElementById("map").src=
-    `https://maps.google.com/maps?q=${latitude},${longitude}&z=14&output=embed`;
+const ctx=document.getElementById("chart");
+const chart=new Chart(ctx,{
+  type:"line",
+  data:{
+    labels:[],
+    datasets:[{
+      label:"Ping (ms)",
+      data:[],
+      borderWidth:2,
+      tension:.3
+    }]
+  },
+  options:{responsive:true}
 });
 
-// Minecraft ping
-async function pingMinecraft(){
-  const ip=document.getElementById("serverIP").value;
-  if(!ip) return;
+async function checkPing(){
+  const ip=ipInput.value;
+  const port=portInput.value;
+  const type=typeSelect.value;
 
-  const start=performance.now();
-  try{
-    await fetch(`https://api.mcsrvstat.us/2/${ip}`);
-    const ping=Math.round(performance.now()-start);
+  const res=await fetch(
+    `https://YOUR-BACKEND-URL/ping?ip=${ip}&port=${port}&type=${type}`
+  );
+  const data=await res.json();
 
-    document.getElementById("current").innerText=ping;
-
-    if(lowest===null||ping<lowest) lowest=ping;
-    if(ping>highest) highest=ping;
-
-    document.getElementById("low").innerText=lowest;
-    document.getElementById("high").innerText=highest;
-
-    if(ping>=HIGH_PING_LIMIT && !soundCooldown){
-      sound.play();
-      soundCooldown=true;
-      setTimeout(()=>soundCooldown=false,5000);
-    }
-  }catch{
-    document.getElementById("current").innerText="Error";
+  if(!data.online){
+    quality.innerText="SERVER OFFLINE";
+    return;
   }
-}
-setInterval(pingMinecraft,3000);
-</script>
 
+  const ping=data.ping;
+  document.getElementById("ping").innerText=ping;
+
+  minPing=Math.min(minPing,ping);
+  maxPing=Math.max(maxPing,ping);
+  min.innerText=minPing;
+  max.innerText=maxPing;
+
+  if(ping<=100){
+    quality.innerText="GOOD";
+    quality.className="good neon";
+  }else if(ping<=200){
+    quality.innerText="MEDIUM";
+    quality.className="medium neon";
+  }else{
+    quality.innerText="BAD";
+    quality.className="bad neon";
+    sound.play();
+  }
+
+  dataArr.push(ping);
+  chart.data.labels.push("");
+  chart.data.datasets[0].data=dataArr;
+  chart.update();
+}
+
+/* Location Map */
+const map=L.map('map').setView([0,0],2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+fetch("https://ipapi.co/json/")
+.then(r=>r.json())
+.then(l=>{
+  map.setView([l.latitude,l.longitude],10);
+  L.marker([l.latitude,l.longitude]).addTo(map);
+});
+</script>
 </body>
 </html>
