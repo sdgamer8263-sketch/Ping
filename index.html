@@ -5,13 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Minecraft Real Ping Monitor</title>
 
-<!-- Minecraft Font -->
 <link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
-
-<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-<!-- Leaflet Map -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
@@ -19,7 +14,7 @@
 body{
   margin:0;
   height:100vh;
-  background:url("dfr.jpg") no-repeat center center fixed;
+  background:url("beaa776788318ffa9adf475282e18bb5.gif") no-repeat center center fixed;
   background-size:cover;
   font-family:'Minecraft', sans-serif;
   display:flex;
@@ -35,18 +30,18 @@ body{
   position:relative;
   z-index:2;
   width:95%;
-  max-width:450px;
+  max-width:460px;
   backdrop-filter:blur(16px);
-  background:rgba(10,10,20,.75);
+  background:rgba(10,10,20,.8);
   border-radius:22px;
   padding:18px;
   color:#e5e7eb;
-  box-shadow:0 0 30px #00ffff66;
+  box-shadow:0 0 35px #00ffff88;
 }
 h1{
   text-align:center;
   color:#00ffff;
-  text-shadow:0 0 10px #00ffff;
+  text-shadow:0 0 12px #00ffff;
 }
 input,select,button{
   width:100%;
@@ -69,13 +64,9 @@ button{
 .medium{color:#facc15}
 .bad{color:#ef4444}
 .neon{text-shadow:0 0 8px currentColor}
-
 #map{
-  height:150px;
+  height:140px;
   border-radius:12px;
-  margin-top:10px;
-}
-canvas{
   margin-top:10px;
 }
 </style>
@@ -87,22 +78,22 @@ canvas{
 <div class="card">
 <h1>Minecraft Ping</h1>
 
-<input id="ip" placeholder="Server IP">
-<input id="port" placeholder="Port (25565 / 19132)">
+<input id="ipInput" placeholder="Server IP (play.example.net)">
+<input id="portInput" placeholder="Port">
 
-<select id="type">
-  <option value="java">Java</option>
-  <option value="bedrock">Bedrock</option>
-  <option value="geyser">Geyser</option>
-  <option value="other">Other</option>
+<select id="typeSelect" onchange="autoPort()">
+  <option value="java">Minecraft Java</option>
+  <option value="bedrock">Minecraft Bedrock</option>
+  <option value="geyser">Geyser (Java + Bedrock)</option>
+  <option value="other">Other Server</option>
 </select>
 
 <button onclick="checkPing()">Check Ping</button>
 
-<div>
+<div style="margin-top:8px;line-height:1.6">
   Ping: <span id="ping">--</span> ms<br>
-  Min: <span id="min">--</span> ms |
-  Max: <span id="max">--</span> ms<br>
+  Min: <span id="minPing">--</span> ms |
+  Max: <span id="maxPing">--</span> ms<br>
   Gameplay: <span id="quality">--</span>
 </div>
 
@@ -113,12 +104,27 @@ canvas{
 <audio id="pingSound" src="sounds/alert.mp3" preload="auto"></audio>
 
 <script>
-let minPing=Infinity,maxPing=0;
-let dataArr=[];
-const sound=document.getElementById("pingSound");
+/* ELEMENTS */
+const ipInput = document.getElementById("ipInput");
+const portInput = document.getElementById("portInput");
+const typeSelect = document.getElementById("typeSelect");
+const pingEl = document.getElementById("ping");
+const minEl = document.getElementById("minPing");
+const maxEl = document.getElementById("maxPing");
+const qualityEl = document.getElementById("quality");
+const sound = document.getElementById("pingSound");
 
-const ctx=document.getElementById("chart");
-const chart=new Chart(ctx,{
+let minPing = Infinity;
+let maxPing = 0;
+
+/* AUTO PORT */
+function autoPort(){
+  if(typeSelect.value === "java") portInput.value = 25565;
+  else if(typeSelect.value === "bedrock") portInput.value = 19132;
+}
+
+/* GRAPH */
+const chart = new Chart(document.getElementById("chart"), {
   type:"line",
   data:{
     labels:[],
@@ -132,49 +138,60 @@ const chart=new Chart(ctx,{
   options:{responsive:true}
 });
 
+/* REAL PING */
 async function checkPing(){
-  const ip=ipInput.value;
-  const port=portInput.value;
-  const type=typeSelect.value;
+  const ip = ipInput.value.trim();
+  const port = portInput.value.trim();
+  const type = typeSelect.value;
 
-  const res=await fetch(
-    `https://YOUR-BACKEND-URL/ping?ip=${ip}&port=${port}&type=${type}`
-  );
-  const data=await res.json();
-
-  if(!data.online){
-    quality.innerText="SERVER OFFLINE";
+  if(!ip || !port){
+    alert("Enter IP and Port");
     return;
   }
 
-  const ping=data.ping;
-  document.getElementById("ping").innerText=ping;
+  try{
+    const res = await fetch(
+      `https://YOUR-BACKEND-URL/ping?ip=${ip}&port=${port}&type=${type}`
+    );
+    const data = await res.json();
 
-  minPing=Math.min(minPing,ping);
-  maxPing=Math.max(maxPing,ping);
-  min.innerText=minPing;
-  max.innerText=maxPing;
+    if(!data.online){
+      qualityEl.innerText = "SERVER OFFLINE";
+      qualityEl.className = "bad neon";
+      return;
+    }
 
-  if(ping<=100){
-    quality.innerText="GOOD";
-    quality.className="good neon";
-  }else if(ping<=200){
-    quality.innerText="MEDIUM";
-    quality.className="medium neon";
-  }else{
-    quality.innerText="BAD";
-    quality.className="bad neon";
-    sound.play();
+    const ping = data.ping;
+    pingEl.innerText = ping;
+
+    minPing = Math.min(minPing, ping);
+    maxPing = Math.max(maxPing, ping);
+    minEl.innerText = minPing;
+    maxEl.innerText = maxPing;
+
+    if(ping <= 100){
+      qualityEl.innerText = "GOOD";
+      qualityEl.className = "good neon";
+    }else if(ping <= 200){
+      qualityEl.innerText = "MEDIUM";
+      qualityEl.className = "medium neon";
+    }else{
+      qualityEl.innerText = "BAD";
+      qualityEl.className = "bad neon";
+      sound.play();
+    }
+
+    chart.data.labels.push("");
+    chart.data.datasets[0].data.push(ping);
+    chart.update();
+
+  }catch(e){
+    alert("Backend not reachable");
   }
-
-  dataArr.push(ping);
-  chart.data.labels.push("");
-  chart.data.datasets[0].data=dataArr;
-  chart.update();
 }
 
-/* Location Map */
-const map=L.map('map').setView([0,0],2);
+/* LOCATION MAP */
+const map = L.map('map').setView([0,0],2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 fetch("https://ipapi.co/json/")
@@ -183,6 +200,13 @@ fetch("https://ipapi.co/json/")
   map.setView([l.latitude,l.longitude],10);
   L.marker([l.latitude,l.longitude]).addTo(map);
 });
+
+/* FULLSCREEN ON TAP (mobile) */
+document.body.addEventListener("click",()=>{
+  if(document.fullscreenElement==null){
+    document.body.requestFullscreen().catch(()=>{});
+  }
+},{once:true});
 </script>
 </body>
 </html>
