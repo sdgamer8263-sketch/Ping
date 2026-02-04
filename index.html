@@ -28,7 +28,7 @@ button{background:#0ff;color:#000;font-weight:bold}
 button:active{transform:scale(.97)}
 .result{text-align:center;margin-top:6px}
 .good{color:#0f0}.medium{color:#ff0}.bad{color:#f33}
-canvas{margin-top:10px;width:100%;height:80px;}
+canvas{margin-top:10px;width:100%;height:100px;border-radius:10px;box-shadow:0 0 15px #0ff}
 #map{height:200px;width:100%;margin-top:10px;border-radius:12px;box-shadow:0 0 15px #0ff}
 .small{text-align:center;font-size:12px;opacity:.8}
 </style>
@@ -56,24 +56,21 @@ canvas{margin-top:10px;width:100%;height:80px;}
 
   <canvas id="graph"></canvas>
   <div id="map"></div>
-
   <div class="small">Tip: First click may wake server</div>
 </div>
 
 <audio id="alertSound" src="sounds/alert.mp3"></audio>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const API="https://ping-yies.onrender.com/ping";
 const canvas=document.getElementById("graph"),ctx=canvas.getContext("2d");
-let hist=[],times=[],minPing=null,maxPing=null,waking=false;
+let hist=[],times=[],minPing=null,maxPing=null,waking=false,marker=null;
 
-// Leaflet map
+// Leaflet map setup
 const map=L.map('map').setView([20,0],2);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom:19, attribution:'&copy; OpenStreetMap'
-}).addTo(map);
-let marker=null;
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(map);
+
+let autoPingInterval=null;
 
 function checkPing(){
   const ip=document.getElementById("ip").value.trim();
@@ -81,6 +78,12 @@ function checkPing(){
   const type=document.getElementById("type").value;
   if(!ip){set("Enter server IP ❌");return}
 
+  fetchPing(ip,port,type);
+  if(autoPingInterval) clearInterval(autoPingInterval);
+  autoPingInterval = setInterval(()=>fetchPing(ip,port,type),5000); // auto every 5s
+}
+
+function fetchPing(ip,port,type){
   set("Checking...");
   document.getElementById("ping").innerText="";
   document.getElementById("quality").innerText="";
@@ -93,12 +96,12 @@ function checkPing(){
 
       const p=d.ping;
 
-      // Min / Max
+      // Min / Max ping
       minPing=minPing===null?p:Math.min(minPing,p);
       maxPing=maxPing===null?p:Math.max(maxPing,p);
       document.getElementById("minmax").innerText=`Min: ${minPing} ms | Max: ${maxPing} ms`;
 
-      // Time
+      // Last check time
       const now=new Date().toLocaleTimeString();
       times.push(now); if(times.length>20) times.shift();
       document.getElementById("timeinfo").innerText=`Last check: ${now}`;
@@ -119,7 +122,9 @@ function checkPing(){
       set("Server Online ✅");
       drawGraph();
     })
-    .catch(()=>{if(!waking){waking=true;set("Waking server… tap again ⏳");}});
+    .catch(()=>{
+      if(!waking){waking=true;set("Waking server… tap again ⏳");}
+    });
 }
 
 function fetchLocation(ip){
@@ -128,7 +133,6 @@ function fetchLocation(ip){
     .then(data=>{
       if(data && data.latitude && data.longitude){
         document.getElementById("location").innerText=`Server location: ${data.city || 'Unknown'}, ${data.country_name || 'Unknown'}`;
-        // Add marker
         if(marker) marker.remove();
         marker=L.marker([data.latitude,data.longitude]).addTo(map)
           .bindPopup(`Server: ${ip}<br>${data.city || 'Unknown'}, ${data.country_name || 'Unknown'}`)
@@ -146,14 +150,19 @@ function set(s){document.getElementById("status").innerText=s}
 
 function drawGraph(){
   canvas.width=canvas.clientWidth;
-  canvas.height=80;
+  canvas.height=100;
   ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(hist.length<1) return;
+
   ctx.beginPath();
   ctx.strokeStyle="#0ff";
+  ctx.lineWidth=2;
+
+  const scale = 400; // ping max scale
   hist.forEach((p,i)=>{
-    const xx=i*(canvas.width/(hist.length-1||1));
-    const yy=canvas.height-(p/300*canvas.height);
-    i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);
+    const x = i*(canvas.width/(hist.length-1||1));
+    const y = canvas.height - Math.min(p,scale)/scale*canvas.height;
+    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
   });
   ctx.stroke();
 }
