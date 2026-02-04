@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minecraft Ping Monitor</title>
+
+<style>
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+  font-family:'Segoe UI',sans-serif;
+}
+body{
+  height:100vh;
+  background:url("dfr.jpg") no-repeat center center fixed;
+  background-size:cover;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  color:#e5e7eb;
+}
+.overlay{
+  background:rgba(0,0,0,0.6);
+  backdrop-filter:blur(12px);
+  border-radius:20px;
+  padding:22px;
+  width:95%;
+  max-width:380px;
+  border:1px solid rgba(56,189,248,0.4);
+  box-shadow:0 0 45px rgba(56,189,248,0.35);
+}
+h2{
+  text-align:center;
+  color:#38bdf8;
+  margin-bottom:6px;
+}
+.time{
+  text-align:center;
+  font-size:13px;
+  color:#94a3b8;
+  margin-bottom:14px;
+}
+input{
+  width:100%;
+  padding:8px;
+  border-radius:8px;
+  border:none;
+  outline:none;
+  margin-bottom:12px;
+  background:#020617;
+  color:#e5e7eb;
+}
+.stat{
+  display:flex;
+  justify-content:space-between;
+  margin:8px 0;
+}
+.current{color:#22c55e;font-weight:bold;}
+.low{color:#38bdf8;font-weight:bold;}
+.high{color:#f87171;font-weight:bold;}
+.map{
+  margin-top:12px;
+  border-radius:12px;
+  overflow:hidden;
+  border:1px solid rgba(56,189,248,0.3);
+}
+</style>
+</head>
+
+<body>
+
+<div class="overlay">
+  <h2>⛏️ Minecraft Ping Monitor</h2>
+  <div class="time" id="time">--:--:--</div>
+
+  <input id="serverIP" placeholder="Minecraft Server IP (example: play.hypixel.net)">
+
+  <div class="stat">Current Ping <span class="current" id="current">-</span> ms</div>
+  <div class="stat">Lowest Ping <span class="low" id="low">-</span> ms</div>
+  <div class="stat">Highest Ping <span class="high" id="high">-</span> ms</div>
+
+  <div class="map">
+    <iframe id="map" width="100%" height="160" loading="lazy"></iframe>
+  </div>
+</div>
+
+<audio id="pingSound" src="sounds/alert.mp3" preload="auto"></audio>
+
+<script>
+let lowest=null;
+let highest=0;
+const HIGH_PING_LIMIT=200;
+let soundCooldown=false;
+const sound=document.getElementById("pingSound");
+
+// Live time
+setInterval(()=>{
+  document.getElementById("time").innerText=
+    new Date().toLocaleTimeString();
+},1000);
+
+// User location map
+navigator.geolocation.getCurrentPosition(pos=>{
+  const{latitude,longitude}=pos.coords;
+  document.getElementById("map").src=
+    `https://maps.google.com/maps?q=${latitude},${longitude}&z=14&output=embed`;
+});
+
+// Minecraft ping
+async function pingMinecraft(){
+  const ip=document.getElementById("serverIP").value;
+  if(!ip) return;
+
+  const start=performance.now();
+  try{
+    await fetch(`https://api.mcsrvstat.us/2/${ip}`);
+    const ping=Math.round(performance.now()-start);
+
+    document.getElementById("current").innerText=ping;
+
+    if(lowest===null||ping<lowest) lowest=ping;
+    if(ping>highest) highest=ping;
+
+    document.getElementById("low").innerText=lowest;
+    document.getElementById("high").innerText=highest;
+
+    if(ping>=HIGH_PING_LIMIT && !soundCooldown){
+      sound.play();
+      soundCooldown=true;
+      setTimeout(()=>soundCooldown=false,5000);
+    }
+  }catch{
+    document.getElementById("current").innerText="Error";
+  }
+}
+setInterval(pingMinecraft,3000);
+</script>
+
+</body>
+</html>
