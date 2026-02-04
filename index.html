@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Minecraft Ping</title>
+<title>Minecraft Ping Tool</title>
 <link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
 <style>
 *{box-sizing:border-box;font-family:'Minecraft',sans-serif}
@@ -52,6 +52,9 @@ canvas{margin-top:10px;width:100%}
   <div class="result" id="status">Ready</div>
   <div class="result" id="ping"></div>
   <div class="result" id="quality"></div>
+  <div class="result" id="minmax"></div>
+  <div class="result" id="timeinfo"></div>
+  <div class="result" id="location"></div>
 
   <canvas id="graph" height="80"></canvas>
   <div class="small">Tip: First click may wake server</div>
@@ -62,7 +65,7 @@ canvas{margin-top:10px;width:100%}
 <script>
 const API="https://ping-yies.onrender.com/ping";
 const c=document.getElementById("graph"),x=c.getContext("2d");
-let hist=[],waking=false;
+let hist=[],times=[],minPing=null,maxPing=null,waking=false;
 
 function checkPing(){
   const ip=document.getElementById("ip").value.trim();
@@ -71,40 +74,70 @@ function checkPing(){
   if(!ip){set("Enter server IP ❌");return}
 
   set("Checking...");
+  document.getElementById("ping").innerText="";
+  document.getElementById("quality").innerText="";
+  
   fetch(`${API}?ip=${ip}&port=${port}&type=${type}`)
-  .then(r=>r.json())
-  .then(d=>{
-    if(!d.online){set("Server Offline ❌");return}
-    waking=false;
-    const p=d.ping;
-    hist.push(p); if(hist.length>20) hist.shift();
-    document.getElementById("ping").innerText=`Ping: ${p} ms`;
+    .then(r=>r.json())
+    .then(d=>{
+      if(!d.online){set("Server Offline ❌");return}
+      waking=false;
 
-    let t="GOOD",cls="good";
-    if(p>200){t="BAD";cls="bad";sound()}
-    else if(p>120){t="MEDIUM";cls="medium"}
-    document.getElementById("quality").innerHTML=`<span class="${cls}">${t}</span>`;
-    set("Online ✅");
-    draw();
-  })
-  .catch(()=>{
-    if(!waking){
-      waking=true;
-      set("Waking server… tap again ⏳");
-    }
-  });
+      const p=d.ping;
+
+      // Min / Max ping
+      minPing = minPing===null ? p : Math.min(minPing,p);
+      maxPing = maxPing===null ? p : Math.max(maxPing,p);
+      document.getElementById("minmax").innerText = `Min: ${minPing} ms | Max: ${maxPing} ms`;
+
+      // Time
+      const now=new Date().toLocaleTimeString();
+      times.push(now);
+      if(times.length>20) times.shift();
+      document.getElementById("timeinfo").innerText = `Last check: ${now}`;
+
+      // Current ping
+      hist.push(p); if(hist.length>20) hist.shift();
+      document.getElementById("ping").innerText=`Ping: ${p} ms`;
+
+      // Quality
+      let t="GOOD",cls="good";
+      if(p>200){t="BAD";cls="bad";playSound()}
+      else if(p>120){t="MEDIUM";cls="medium"}
+      document.getElementById("quality").innerHTML=`<span class="${cls}">${t}</span>`;
+
+      // Location
+      fetchLocation(ip);
+
+      set("Server Online ✅");
+      draw();
+    })
+    .catch(()=>{if(!waking){waking=true;set("Waking server… tap again ⏳");}});
 }
 
+function fetchLocation(ip){
+  fetch(`https://ipapi.co/${ip}/country_name/`)
+    .then(r=>r.text())
+    .then(c=>document.getElementById("location").innerText="Server location: "+c)
+    .catch(()=>{document.getElementById("location").innerText=""});
+}
+
+function playSound(){const a=document.getElementById("alertSound");a.currentTime=0;a.play()}
 function set(s){document.getElementById("status").innerText=s}
-function sound(){const a=document.getElementById("alertSound");a.currentTime=0;a.play()}
+
 function draw(){
-  c.width=c.clientWidth;x.clearRect(0,0,c.width,c.height);
-  x.beginPath();x.strokeStyle="#0ff";
+  c.width=c.clientWidth;
+  x.clearRect(0,0,c.width,c.height);
+  x.beginPath();
+  x.strokeStyle="#0ff";
   hist.forEach((p,i)=>{
-    const xx=i*(c.width/20),yy=c.height-(p/300*c.height);
-    i?x.lineTo(xx,yy):x.moveTo(xx,yy)
-  });x.stroke();
+    const xx=i*(c.width/(hist.length-1||1));
+    const yy=c.height-(p/300*c.height);
+    i?x.lineTo(xx,yy):x.moveTo(xx,yy);
+  });
+  x.stroke();
 }
 </script>
+
 </body>
 </html>
